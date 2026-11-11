@@ -1,25 +1,27 @@
 "use client";
 
-import { Database, RotateCcw, UserCheck } from "lucide-react";
-import { toast } from "sonner";
+import { UserCheck } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { PageHeader, SectionCard } from "@/components/panel/panel-ui";
-import { resetMockDB, useMockDB } from "@/hooks/use-mock-db";
+import { ChangePasswordForm } from "@/features/authentication/components/change-password-form";
 import { useAuthStore } from "@/store/auth.store";
+import { analyticsService } from "@/services/analytics.api.service";
 import { BOOKING_CONFIG, APP_CONFIG } from "@/config/app.config";
 import { rupiah } from "@/lib/business";
+import type { AdminDashboardStats } from "@/types/api";
 
-// ============================================================================
-// SETTINGS — halaman pengaturan + ALAT DEVELOPMENT yang jelas ditandai:
-//   Reset Data Demo, info konfigurasi, dan info sesi saat ini.
-// ============================================================================
+// Halaman pengaturan.
 
 export default function AdminSettingsPage() {
-  const db = useMockDB();
   const user = useAuthStore((s) => s.user);
+  const { data, isLoading, isError } = useQuery<AdminDashboardStats>({
+    queryKey: ["admin", "dashboard", "settings"],
+    queryFn: () => analyticsService.getAdminDashboard(),
+  });
 
   return (
     <div>
-      <PageHeader title="Settings" subtitle="Konfigurasi aplikasi & alat demo" />
+      <PageHeader title="Settings" subtitle="Konfigurasi aplikasi" />
 
       <div className="grid gap-3 lg:grid-cols-2">
         <SectionCard title="Konfigurasi Booking" subtitle="Nilai terpusat (config/app.config.ts)">
@@ -27,7 +29,7 @@ export default function AdminSettingsPage() {
             <Row label="Kapasitas pengunjung / hari" value={`${APP_CONFIG.dailyVisitorCapacity} orang`} />
             <Row label="Maks. hari ke depan" value={`${BOOKING_CONFIG.maxDaysAhead} hari`} />
             <Row label="Maks. tiket per jenis" value={`${BOOKING_CONFIG.maxQuantityPerTicket} tiket`} />
-            <Row label="Biaya layanan" value={rupiah(BOOKING_CONFIG.serviceFee)} />
+            <Row label="Biaya layanan" value={`${BOOKING_CONFIG.serviceFeePercent}% dari subtotal`} />
             <Row label="Kadaluarsa pembayaran" value={`${BOOKING_CONFIG.paymentExpiryMinutes} menit`} />
             <Row label="Metode pembayaran" value="QRIS (simulasi)" />
           </dl>
@@ -36,7 +38,7 @@ export default function AdminSettingsPage() {
           </p>
         </SectionCard>
 
-        <SectionCard title="Sesi Saat Ini" subtitle="Informasi sesi mock">
+        <SectionCard title="Sesi Saat Ini" subtitle="Informasi sesi">
           <dl className="space-y-2 text-sm">
             <Row label="Pengguna" value={user?.name ?? "-"} />
             <Row label="Email" value={user?.email ?? "-"} />
@@ -45,40 +47,30 @@ export default function AdminSettingsPage() {
           </dl>
           <div className="mt-3 flex items-center gap-2 rounded-md bg-[#f7fbff] px-3 py-2 text-xs text-[#29445e]">
             <UserCheck className="h-4 w-4 text-[#16876a]" />
-            Kredensial akun demo dapat diubah di <code className="mx-1 rounded bg-white px-1">config/auth.config.ts</code>
+            Akun staf di-provision di <code className="mx-1 rounded bg-white px-1">backend/internal/seed/seed.go</code>
           </div>
         </SectionCard>
 
-        <SectionCard title="Status Data Mock" subtitle="Jumlah record per entitas">
-          <dl className="space-y-2 text-sm">
-            <Row label="Jenis tiket" value={db.tickets.length.toLocaleString("id-ID")} />
-            <Row label="Booking" value={db.bookings.length.toLocaleString("id-ID")} />
-            <Row label="Pembayaran" value={db.payments.length.toLocaleString("id-ID")} />
-            <Row label="E-tiket" value={db.eTickets.length.toLocaleString("id-ID")} />
-            <Row label="Pengunjung" value={db.visitors.length.toLocaleString("id-ID")} />
-            <Row label="Petugas" value={db.staff.length.toLocaleString("id-ID")} />
-            <Row label="Riwayat scan" value={db.scanHistory.length.toLocaleString("id-ID")} />
-          </dl>
+        <SectionCard title="Keamanan Akun" subtitle="Ubah password akun admin">
+          <ChangePasswordForm className="max-w-sm" />
         </SectionCard>
 
-        <SectionCard title="Alat Development" subtitle="Hanya untuk mode demo — tidak untuk produksi">
-          <div className="rounded-md border border-dashed border-[#b7791f] bg-[#fdf3e3] p-4">
-            <p className="flex items-center gap-2 text-sm font-bold text-[#b7791f]">
-              <Database className="h-4 w-4" /> Zona Alat Demo
-            </p>
-            <p className="mt-1 text-xs text-[#8a6420]">
-              Reset mengembalikan seluruh data mock (booking, pembayaran, tiket, scan) ke dataset awal. Semua perubahan lokal hilang.
-            </p>
-            <button
-              onClick={() => {
-                resetMockDB();
-                toast.success("Data demo berhasil direset ke dataset awal");
-              }}
-              className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-md bg-[#c53030] px-4 text-xs font-semibold text-white hover:brightness-95"
-            >
-              <RotateCcw className="h-4 w-4" /> Reset Data Demo
-            </button>
-          </div>
+        <SectionCard title="Ringkasan Data" subtitle="Langsung dari backend">
+          {isLoading ? (
+            <p className="py-6 text-center text-sm text-[#698097]">Memuat…</p>
+          ) : isError || !data ? (
+            <p className="py-6 text-center text-sm text-[#c53030]">Gagal memuat statistik.</p>
+          ) : (
+            <dl className="space-y-2 text-sm">
+              <Row label="Total booking" value={data.total_bookings.toLocaleString("id-ID")} />
+              <Row label="Tiket terjual" value={data.total_tickets_sold.toLocaleString("id-ID")} />
+              <Row label="Pengunjung" value={data.total_visitors.toLocaleString("id-ID")} />
+              <Row label="Tiket tersedia" value={data.tickets_available.toLocaleString("id-ID")} />
+              <Row label="Petugas aktif" value={data.active_staff.toLocaleString("id-ID")} />
+              <Row label="Pembayaran tertunda" value={data.pending_payments.toLocaleString("id-ID")} />
+              <Row label="Pendapatan" value={rupiah(data.revenue)} />
+            </dl>
+          )}
         </SectionCard>
       </div>
     </div>

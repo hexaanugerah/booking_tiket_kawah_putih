@@ -1,11 +1,7 @@
 import type { BookingItem } from "@/types/domain";
 import { BOOKING_CONFIG } from "@/config/app.config";
 
-// ============================================================================
-// BUSINESS LOGIC — utilitas perhitungan terpusat.
-// Aturan: TIDAK ADA komponen yang menghitung total/harga/paginasi sendiri;
-// semua melewati fungsi di sini agar konsisten dan mudah diuji.
-// ============================================================================
+// Business logic — utilitas perhitungan terpusat. Tidak ada komponen yang menghitung total/harga/paginasi sendiri; semua lewat fungsi di sini agar konsisten.
 
 /** Format angka ke Rupiah. */
 export function rupiah(value: number): string {
@@ -19,10 +15,16 @@ export function todayISO(): string {
   return new Date(d.getTime() - off * 60_000).toISOString().slice(0, 10);
 }
 
+// Arifmatika tanggal dilakukan pada komponen lokal (bukan toISOString) supaya
+// offset zona waktu tidak menggeser hasilnya satu hari — mis. min tanggal
+// pemesanan di UTC+7 sempat mundur ke kemarin.
 export function addDaysISO(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const [y = 0, m = 1, d = 1] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${dt.getFullYear()}-${mm}-${dd}`;
 }
 
 /** Selisih hari (integer) antara dua tanggal ISO. */
@@ -32,9 +34,7 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((db - da) / 86_400_000);
 }
 
-// ---------------------------------------------------------------------------
-// ID GENERATORS
-// ---------------------------------------------------------------------------
+// Generator ID
 
 function randomSeq(len: number): string {
   let s = "";
@@ -60,9 +60,7 @@ export function generateTicketId(): string {
   return `TK-${s}`;
 }
 
-// ---------------------------------------------------------------------------
-// PRICE CALCULATION — satu-satunya tempat total dipesan dihitung
-// ---------------------------------------------------------------------------
+// Perhitungan harga — satu-satunya tempat total dipesan dihitung
 
 export interface BookingTotals {
   subtotal: number;
@@ -75,20 +73,23 @@ export interface BookingTotals {
 
 export function calculateBookingTotals(
   items: Pick<BookingItem, "price" | "quantity">[],
-  overrides?: { discountPercent?: number; taxPercent?: number; serviceFee?: number }
+  overrides?: { discountPercent?: number; taxPercent?: number; serviceFeePercent?: number }
 ): BookingTotals {
   const subtotal = items.reduce((sum, it) => sum + it.price * it.quantity, 0);
   const totalTickets = items.reduce((sum, it) => sum + it.quantity, 0);
-  const serviceFee = totalTickets > 0 ? (overrides?.serviceFee ?? BOOKING_CONFIG.serviceFee) : 0;
+  // Backend menghitung round(subtotal * 2%). Jangan diganti flat: pratinjau harus
+  // sama persis dengan tagihan yang dibuat server (lihat booking/service.go).
+  const serviceFee =
+    totalTickets > 0
+      ? Math.round((subtotal * (overrides?.serviceFeePercent ?? BOOKING_CONFIG.serviceFeePercent)) / 100)
+      : 0;
   const discount = Math.round((subtotal * (overrides?.discountPercent ?? BOOKING_CONFIG.discountPercent)) / 100);
   const tax = Math.round(((subtotal - discount) * (overrides?.taxPercent ?? BOOKING_CONFIG.taxPercent)) / 100);
   const total = Math.max(0, subtotal - discount + serviceFee + tax);
   return { subtotal, serviceFee, discount, tax, total, totalTickets };
 }
 
-// ---------------------------------------------------------------------------
-// STATISTICS
-// ---------------------------------------------------------------------------
+// Statistik
 
 /** Persentase perubahan dari periode sebelumnya, dibulatkan 1 desimal. */
 export function calculatePercentageChange(current: number, previous: number): number {
@@ -96,9 +97,7 @@ export function calculatePercentageChange(current: number, previous: number): nu
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
-// ---------------------------------------------------------------------------
-// TABLE ENGINE — search / filter / sort / pagination reusable
-// ---------------------------------------------------------------------------
+// Table engine — search / filter / sort / pagination yang bisa dipakai ulang
 
 export interface PaginateOptions {
   page: number;
